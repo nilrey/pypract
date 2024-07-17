@@ -92,17 +92,10 @@ def my_thread_runner(connection, mp, mv):
     try:
         with Session(connection) as session:
             stmt = text("""
-                        INSERT INTO common.markups( id, previous_id, dataset_id, file_id, parent_id, mark_time, 
-                        mark_path, vector, description, 
-                        author_id, dt_created, is_deleted)
-                        VALUES (:item_id, null, null, null, null, 99, 
-                        :mark_path, :mark_vector, 'tread', 
-                        null, '2024-12-12 12:23:33', false);
+                        INSERT INTO common.markups( id, previous_id, dataset_id, file_id, parent_id, mark_time, mark_path, vector, description, author_id, dt_created, is_deleted)
+                        VALUES (:item_id, null, null, null, null, 99, :mark_path, :mark_vector, 'tread', null, '2024-12-12 12:23:33', false);
                      """)
-            # stmt.bindparams(mark_path=mp)
-            # print(stmt)
-            # with db_conn() as session:
-            resp = session.execute(stmt, {"item_id": getUuid(), 
+            resp = session.execute(stmt, {"item_id": getUuid(),
                                           "mark_path": mp ,
                                           "mark_vector" : mv } )
             session.commit()
