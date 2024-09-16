@@ -85,8 +85,7 @@ def tread_mark_insert(mp, mv):
     connection.detach()
 
     # pass the connection to the thread.  
-    t = threading.Thread(target=my_thread_runner, args=(connection, mp, mv))
-    t.start()
+    threading.Thread(target=my_thread_runner, args=(connection, mp, mv)).start()
 
 def my_thread_runner(connection, mp, mv):
     try:
@@ -99,9 +98,6 @@ def my_thread_runner(connection, mp, mv):
                                           "mark_path": mp ,
                                           "mark_vector" : mv } )
             session.commit()
-
-
-
     finally:
         # closes the connection, i.e. the socket etc.
         connection.close()
