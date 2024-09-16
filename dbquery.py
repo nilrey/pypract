@@ -76,7 +76,7 @@ def q_user_insert(user_name = 'user7'):
    return {}
 
 
-def tread_mark_insert(mp, mv):
+def tread_mark_insert(mp, mv, stmt):
     # connection from the regular pool
     engine = create_engine(get_connection_string())
     connection = engine.connect()
@@ -85,18 +85,41 @@ def tread_mark_insert(mp, mv):
     connection.detach()
 
     # pass the connection to the thread.  
-    threading.Thread(target=my_thread_runner, args=(connection, mp, mv)).start()
+    threading.Thread(target=my_thread_runner, args=(connection, mp, mv, stmt)).start()
 
-def my_thread_runner(connection, mp, mv):
+def my_thread_runner(connection, mp, mv, stmt):
     try:
         with Session(connection) as session:
-            stmt = text("""
+            if not stmt :
+               stmt = text("""
                         INSERT INTO common.markups( id, previous_id, dataset_id, file_id, parent_id, mark_time, mark_path, vector, description, author_id, dt_created, is_deleted)
-                        VALUES (:item_id, null, null, null, null, 99, :mark_path, :mark_vector, 'tread', null, '2024-12-12 12:23:33', false);
+                        VALUES (:item_id, null, null, null, null, 99, :mark_path, :mark_vector, 'tread', null, '2024-09-16 12:00:00', false);
                      """)
-            resp = session.execute(stmt, {"item_id": getUuid(),
-                                          "mark_path": mp ,
-                                          "mark_vector" : mv } )
+               resp = session.execute(stmt, {"item_id": getUuid()} )
+            else:
+               resp = session.execute(stmt)
+            session.commit()
+    finally:
+        # closes the connection, i.e. the socket etc.
+        connection.close()
+
+
+def tread_mark_insert_batch(stmt):
+    # connection from the regular pool
+    engine = create_engine(get_connection_string())
+    connection = engine.connect()
+
+    # detach it! now this connection has nothing to do with the pool.
+    connection.detach()
+
+    # pass the connection to the thread.  
+    threading.Thread(target=thread_runner_batch, args=(connection, stmt)).start()
+
+
+def thread_runner_batch(connection, stmt):
+    try:
+        with Session(connection) as session:
+            resp = session.execute(stmt )
             session.commit()
     finally:
         # closes the connection, i.e. the socket etc.
@@ -110,7 +133,7 @@ def q_mark_insert(mp, mv):
                author_id, dt_created, is_deleted)
                VALUES (:item_id, null, null, null, null, 99, 
                :mark_path, :mark_vector, 'test', 
-               null, '2024-12-12 12:23:33', false);
+               null, '2024-09-16 12:00:00', false);
              """)
    # stmt.bindparams(mark_path=mp)
    # print(stmt)

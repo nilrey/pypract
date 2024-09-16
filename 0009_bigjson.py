@@ -1,6 +1,7 @@
 import dbquery as dbq
 import json
 import datetime
+from sqlalchemy import text
 # скрипт парсит json файл 0008-data/test_10_1_new.json , в виде блоков json кладет в поля типа json, в базу
 def readInputFile(filename='output_markup.json'):
 	filepath = '0008-data/'+filename
@@ -20,9 +21,27 @@ def dbq_tread_mark_insert(chains):
 if(__name__ == "__main__"):
 	print('Start ' + str(datetime.datetime.now()))
 	nn_output = readInputFile()
+	nn_output['files'] = nn_output['files'][:3]
+	count_inserts = total_inserts = 0
+	stmt = f'INSERT INTO common.markups( id, previous_id, dataset_id, file_id, parent_id, mark_time, mark_path, vector, description, author_id, dt_created, is_deleted ) VALUES '
+	query = ''
 	for f in nn_output['files']:
-		print(f['file_name'])
+		for chain in f['file_chains'] :
+			for  chain_markup in chain['chain_markups']:
+				s = json.dumps(chain_markup)
+				query += f'(\'{dbq.getUuid()}\', null, null, null, null, 99, \'{s}\', \'{s}\', \'tread\', null, \'2024-09-16 12:00:00\', false),'
+				if(count_inserts == 1000 ):
+					total_inserts += count_inserts
+					dbq.tread_mark_insert_batch( stmt+query[:-1])
+					count_inserts = 0
+					query = ''
+				count_inserts += 1 
+		# break
+	if(query):
+		total_inserts += count_inserts
+		dbq.tread_mark_insert_batch( stmt+query[:-1])
 
+	print(f"Total: {total_inserts}")
 	# chains = nn_output['files'][0]['file_chains']
 	# for chain in chains:
 	# 	for markup in chain['chain_markups']:
