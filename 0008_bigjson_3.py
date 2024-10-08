@@ -21,18 +21,20 @@ class responseMessage():
     def setError(self, text):
         self.composeMessage(True, text)
 
-    def get(self)->json:
+    def get(self)->dict:
         return self.message
 
 
-class parseJson():
+class classJsonSaveDB():
+    # класс сохранения в базу json ответа от ИНС
+
     def __init__(self, dir_json):
         self.message = responseMessage()
-        self.parse_error = False
-        self.start = str(datetime.datetime.now())
-        self.end = ''
-        self.dir_json = dir_json
-        
+        self.dir_json = dir_json # директория с файлами json от ИНС
+        self.parse_error = False # метка критической ошибки в процессе
+        self.query_size = 1000 # количество добавлений в одном блоке insert
+        self.start = str(datetime.datetime.now()) # начало работы скрипта
+        self.end = '' # окончание работы скрипта
 
     def setError(self, text):
         self.parse_error = True # error mark
@@ -40,7 +42,7 @@ class parseJson():
         
 
     def resetError(self):
-        self.parse_error = False # error mark
+        self.parse_error = False
         self.message.set('')
 
 
@@ -52,14 +54,7 @@ class parseJson():
         finally:
             # closes the connection, i.e. the socket etc.
             connection.close()
-            
 
-    def dbq_tread_mark_insert(self, chains):
-        rows_cnt = 0
-        for chain in chains:
-            dbq.tread_mark_insert(json.dumps(chain['chain_markups']['markup_path']))
-            rows_cnt += 1
-        return rows_cnt
 
     def tread_mark_insert_batch(self, stmt):
         # connection from the regular pool
@@ -85,18 +80,19 @@ class parseJson():
 
 
     def ann_out_db_save(self, content):
-        count_values = 0
+        count_values = 0 # values counter
         query_values = []
-        query_size = 1000
         for f in content['files']:
             for chain in f['file_chains'] :
                 for chain_markup in chain['chain_markups']:
+                    # формируем значения для добавления
                     mdata = json.dumps(chain_markup["markup_path"])
                     mid = dbq.getUuid()
                     file_id = dbq.getUuid()
+                    # добавляем сформированные строки в список
                     query_values.append(self.add_query_values([mid, mdata, file_id]))
                     count_values += 1 
-                    if(count_values % query_size == 0 ):
+                    if(count_values % self.query_size == 0 ): # формируем блок запросов размером = query_size
                         self.tread_mark_insert_batch( self.insert_new(query_values))
                         query_values.clear()
         if(len(query_values) > 0): # сохраняем значения из последнего набора, в котором кол-во строк меньше query_size
@@ -116,12 +112,11 @@ class parseJson():
     
     # обходим список json файлов
     def loop_files(self, files):
-        cnt_saved = cnt_error = 0
+        cnt_error = 0
         for filename in files:
             content = self.load_json(f"{self.dir_json}/{filename}")
-            if( not self.parse_error):
+            if( not self.parse_error): # если json файл загружен без ошибок
                 self.ann_out_db_save(content)
-                cnt_saved += 1
             else:
                 print(self.message.get()) # print error message and go to next file
                 self.resetError()
@@ -129,15 +124,15 @@ class parseJson():
 
         self.end =  str(datetime.datetime.now())
         self.message.set(f"Все файлы обработаны. 'start': {self.start}, 'end': {self.end} , "\
-                         f"'results' : 'Всего:{len(files)} Успешно:{cnt_saved} Ошибок:{cnt_error}'" )
+                         f"'results' : 'Всего:{len(files)} Ошибок:{cnt_error}'" )
 
-
-    def get_files(self, ext = []):
+    # смотрим в директорию, фильтруем по расширению файлов (по умолчанию фильтр пуст)
+    def get_files(self, filter = []):
         files = []
         for fl in os.listdir(self.dir_json):
             if os.path.isfile(f'{self.dir_json}/{fl}') :
-                f, ex = os.path.splitext(fl)
-                if( len(ext) == 0 or ex[1:] in ext ):
+                f, ext = os.path.splitext(fl)
+                if( len(filter) == 0 or ext[1:] in filter ): # ext[1:] точку в начале расширения убираем
                     files.append(fl)
         return files
 
@@ -157,6 +152,6 @@ class parseJson():
 
 
 if(__name__ == "__main__"):
-    resp = parseJson(os.path.dirname(__file__)+'/json/0009')
+    resp = classJsonSaveDB(os.path.dirname(__file__)+'/json/0009')
     res = resp.mng_parse_ann_output()
     print(res)
