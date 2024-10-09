@@ -89,7 +89,7 @@ class classJsonSaveDB():
         return f"(\'{values[0]}\', \'test\')"
 
 
-    def insert_new(self, query_values):
+    def insert_markups_new(self, query_values):
         return self.insert_markups_init() + ",".join(query_values)
 
 
@@ -103,33 +103,32 @@ class classJsonSaveDB():
     def set_insert_chains(self, chain_id):
         self.tread_insert_batch( self.insert_chains_new( self.add_chain_values([chain_id]) ))
 
+    # делаем обход записей блоков files в json , берем значения их chains, для каждого chains сохраняем отдельно все записи 
+    # в таблицы: chains (обязательно 1, т.к. есть зависимость в базе) и markups и в связующую таблицу markups_chains
     def ann_out_db_save(self, content):
         count_values = 0 # values counter
         markups_values = []
         chains_markups_values = []
-        cnt = len(content['files'])
         for f in content['files']:
+            file_id = dbq.getUuid()
             for chain in f['file_chains'] :
                 chain_id = dbq.getUuid()
                 self.set_insert_chains(chain_id)
                 for chains_markups in chain['chain_markups']:
-                    # формируем значения для добавления
                     mdata = json.dumps(chains_markups["markup_path"]) # json в колонку markups.mark_path
                     markup_id = dbq.getUuid()
-                    file_id = dbq.getUuid()
                     markups_values.append(self.add_markups_values([markup_id, mdata, file_id])) # добавляем в таблицу markups
                     chains_markups_values.append(self.add_chain_markup_values([chain_id, markup_id]))# добавляем в таблицу markups_chains
                     count_values += 1 
                     if(count_values % self.query_size == 0 ): # формируем блок запросов размером = query_size
-                        self.tread_insert_batch( self.insert_new(markups_values))
+                        self.tread_insert_batch( self.insert_markups_new(markups_values))
                         self.tread_insert_batch( self.insert_markups_chains_new(chains_markups_values))
                         markups_values.clear()
                         chains_markups_values.clear()
         if(len(markups_values) > 0): # сохраняем значения из последнего набора, в котором кол-во строк меньше query_size
-            self.tread_insert_batch( self.insert_new(markups_values))
+            self.tread_insert_batch( self.insert_markups_new(markups_values))
             self.tread_insert_batch( self.insert_markups_chains_new(chains_markups_values))
         
-           
         return self.message.get()
     
 
