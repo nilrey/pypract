@@ -56,7 +56,7 @@ class classJsonSaveDB():
             connection.close()
 
 
-    def tread_mark_insert_batch(self, stmt):
+    def tread_insert_batch(self, stmt):
         # connection from the regular pool
         engine = dbq.create_engine(dbq.get_connection_string())
         connection = engine.connect()
@@ -65,38 +65,70 @@ class classJsonSaveDB():
         # pass the connection to the thread.  
         threading.Thread(target=self.thread_runner_batch, args=(connection, stmt)).start()
 
-    def insert_init(self):
+    def insert_chains_init(self):
+        return """INSERT INTO public.chains( id, name ) 
+                  VALUES """
+
+    def insert_markups_init(self):
         return """INSERT INTO public.markups( id, previous_id, dataset_id, file_id, parent_id, 
                         mark_time, mark_path, vector, description, author_id,  dt_created, is_deleted ) 
                   VALUES """
 
-    def add_query_values(self, values):
+    def insert_markups_chains_init(self):
+        return """INSERT INTO public.markups_chains( chain_id, markup_id, npp ) 
+                  VALUES """
+    
+    def add_markups_values(self, values):
         return f"(\'{values[0]}\', null, null, null, null, 99, \'{values[1]}\', \'{values[1]}\', \'tread\', "\
                 f"null, \'2024-10-08 12:42:00\', false)"
     
+    def add_chain_markup_values(self, values):
+        return f"(\'{values[0]}\', \'{values[1]}\', null)"
+    
+    def add_chain_values(self, values):
+        return f"(\'{values[0]}\', \'test\')"
+
 
     def insert_new(self, query_values):
-        return self.insert_init() + ",".join(query_values)
+        return self.insert_markups_init() + ",".join(query_values)
 
+
+    def insert_markups_chains_new(self, query_values):
+        return self.insert_markups_chains_init() + ",".join(query_values)
+
+
+    def insert_chains_new(self, query_values):
+        return self.insert_chains_init() + query_values
+    
+    def set_insert_chains(self, chain_id):
+        self.tread_insert_batch( self.insert_chains_new( self.add_chain_values([chain_id]) ))
 
     def ann_out_db_save(self, content):
         count_values = 0 # values counter
-        query_values = []
+        markups_values = []
+        chains_markups_values = []
+        cnt = len(content['files'])
         for f in content['files']:
             for chain in f['file_chains'] :
-                for chain_markup in chain['chain_markups']:
+                chain_id = dbq.getUuid()
+                self.set_insert_chains(chain_id)
+                for chains_markups in chain['chain_markups']:
                     # формируем значения для добавления
-                    mdata = json.dumps(chain_markup["markup_path"])
-                    mid = dbq.getUuid()
+                    mdata = json.dumps(chains_markups["markup_path"]) # json в колонку markups.mark_path
+                    markup_id = dbq.getUuid()
                     file_id = dbq.getUuid()
-                    # добавляем сформированные строки в список
-                    query_values.append(self.add_query_values([mid, mdata, file_id]))
+                    markups_values.append(self.add_markups_values([markup_id, mdata, file_id])) # добавляем в таблицу markups
+                    chains_markups_values.append(self.add_chain_markup_values([chain_id, markup_id]))# добавляем в таблицу markups_chains
                     count_values += 1 
                     if(count_values % self.query_size == 0 ): # формируем блок запросов размером = query_size
-                        self.tread_mark_insert_batch( self.insert_new(query_values))
-                        query_values.clear()
-        if(len(query_values) > 0): # сохраняем значения из последнего набора, в котором кол-во строк меньше query_size
-            self.tread_mark_insert_batch( self.insert_new(query_values))
+                        self.tread_insert_batch( self.insert_new(markups_values))
+                        self.tread_insert_batch( self.insert_markups_chains_new(chains_markups_values))
+                        markups_values.clear()
+                        chains_markups_values.clear()
+        if(len(markups_values) > 0): # сохраняем значения из последнего набора, в котором кол-во строк меньше query_size
+            self.tread_insert_batch( self.insert_new(markups_values))
+            self.tread_insert_batch( self.insert_markups_chains_new(chains_markups_values))
+        
            
         return self.message.get()
     
@@ -116,7 +148,8 @@ class classJsonSaveDB():
         for filename in files:
             content = self.load_json(f"{self.dir_json}/{filename}")
             if( not self.parse_error): # если json файл загружен без ошибок
-                self.ann_out_db_save(content)
+                self.ann_out_db_save(content) # оформить в поток
+                # threading.Thread(target=self.ann_out_db_save, args=(content)).start()
             else:
                 print(self.message.get()) # print error message and go to next file
                 self.resetError()
@@ -137,7 +170,7 @@ class classJsonSaveDB():
         return files
 
 
-    def mng_parse_ann_output(self):
+    def start_parser(self):
         if not os.path.isdir(self.dir_json):
             self.message.setError("Ошибка: указанная директория не сущестует или не доступна")
         else:
@@ -153,5 +186,5 @@ class classJsonSaveDB():
 
 if(__name__ == "__main__"):
     resp = classJsonSaveDB(os.path.dirname(__file__)+'/json/0009')
-    res = resp.mng_parse_ann_output()
+    res = resp.start_parser()
     print(res)
