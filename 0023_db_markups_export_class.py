@@ -92,12 +92,16 @@ class MarkupExporter:
 
         print(f"Данные успешно сохранены в {file_path}")
 
-    def get_binded_datasets(self, dataset_id):
-        query = self.stmt_binded_datasets()
+    def exec_query(self, query, params):
         with self.engine.connect() as connection:
-            result = connection.execute(query, {"dataset_id": dataset_id }) 
-            rows = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
-        return rows
+            result = connection.execute(query, params) 
+            res = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
+
+        return res
+
+    def get_binded_datasets(self):
+        res = self.exec_query( self.stmt_binded_datasets(), {"dataset_id": self.dataset_id })
+        return res
     
     def get_dataset_prent_id(self, rows):
         for row in rows:
@@ -112,7 +116,7 @@ class MarkupExporter:
         os.makedirs(self.output_dir, exist_ok=True)  # Создаем каталог, если его нет
         file_path = os.path.join(self.output_dir, output_file)
         with open(file_path, "w", encoding="utf-8") as f:
-            datasets = self.get_binded_datasets(self.dataset_id)
+            datasets = self.get_binded_datasets()
             if (self.get_dataset_prent_id(datasets) is not None ):
                 json.dump({'datasets':datasets}, f, ensure_ascii=False, indent=4)
                 self.message = 'Success'
