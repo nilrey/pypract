@@ -16,6 +16,7 @@ class MarkupExporter:
     def __init__(self):
         self.project_id = self.dataset_id = self.dataset_parent_id = self.output_dir = None
         self.engine = create_engine(self.get_db_url())
+        self.message = ''
         # self.output_dir = f'/projects_data/{project_id}/{dataset_id}/markups_in'
         
 
@@ -96,10 +97,13 @@ class MarkupExporter:
         with self.engine.connect() as connection:
             result = connection.execute(query, {"dataset_id": dataset_id }) 
             rows = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
+        return rows
+    
+    def get_dataset_prent_id(self, rows):
         for row in rows:
             if row['parent_id'] == None:
                 self.dataset_parent_id = row['id']
-        return rows
+        return self.dataset_parent_id
 
     def run(self, image_id, params , output_file="markups.json"):
         self.project_id, self.dataset_id = params['markups'].strip("/").split("/")[-3:-1]
@@ -109,15 +113,20 @@ class MarkupExporter:
         file_path = os.path.join(self.output_dir, output_file)
         with open(file_path, "w", encoding="utf-8") as f:
             datasets = self.get_binded_datasets(self.dataset_id)
-            json.dump({'datasets':datasets}, f, ensure_ascii=False, indent=4)
+            if (self.get_dataset_prent_id(datasets) is not None ):
+                json.dump({'datasets':datasets}, f, ensure_ascii=False, indent=4)
+                self.message = 'Success'
+            else:
+                self.message = 'Error: dataset_parent_id is not found '
         # files_ids
 
         # self.export_markups()
-        return ''
+        return self.message
 
 
 if __name__ == "__main__":
     image_id = 1
     post_params = {'markups': "/projects_data/fc3108a6-7b57-11ef-b77b-0242ac140002/03dfeb68-7cb5-11ef-84e7-0242ac140002/markups_out"}
     exporter = MarkupExporter()  # Создаем объект экспортера
-    exporter.run(image_id, post_params)  # Экспортируем данные
+    res = exporter.run(image_id, post_params)  # Экспортируем данные
+    print(res)
