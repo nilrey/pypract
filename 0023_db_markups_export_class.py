@@ -96,9 +96,9 @@ class MarkupExporter:
         with self.engine.connect() as connection:
             result = connection.execute(query, {"dataset_id": dataset_id }) 
             rows = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
-        # for row in rows:
-        #     if row['parent_id'] == None:
-        #         self.dataset_parent_id = row['id']
+        for row in rows:
+            if row['parent_id'] == None:
+                self.dataset_parent_id = row['id']
         return rows
 
     def run(self, image_id, params , output_file="markups.json"):
@@ -108,8 +108,8 @@ class MarkupExporter:
         os.makedirs(self.output_dir, exist_ok=True)  # Создаем каталог, если его нет
         file_path = os.path.join(self.output_dir, output_file)
         with open(file_path, "w", encoding="utf-8") as f:
-            rows = self.get_binded_datasets(self.dataset_id)
-            json.dump(rows, f, ensure_ascii=False, indent=4)
+            datasets = self.get_binded_datasets(self.dataset_id)
+            json.dump({'datasets':datasets}, f, ensure_ascii=False, indent=4)
         # files_ids
 
         # self.export_markups()
