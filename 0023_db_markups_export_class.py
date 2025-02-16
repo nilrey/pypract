@@ -79,18 +79,18 @@ class MarkupExporter:
         """)
         return stmt
 
-    def export_markups(self, limit=10, output_file="markups.json"):
-        query = self.stmt_chains_markups()
+    # def export_markups(self, limit=10, output_file="markups.json"):
+    #     query = self.stmt_chains_markups()
         
-        with self.engine.connect() as connection:
-            result = connection.execute(query, {"dataset_id": self.dataset_id, "file_id": self.file_id }) 
-            rows = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
+    #     with self.engine.connect() as connection:
+    #         result = connection.execute(query, {"dataset_id": self.dataset_id, "file_id": self.file_id }) 
+    #         rows = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
 
-        file_path = os.path.join(self.output_dir, output_file)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(rows, f, ensure_ascii=False, indent=4)
+    #     file_path = os.path.join(self.output_dir, output_file)
+    #     with open(file_path, "w", encoding="utf-8") as f:
+    #         json.dump(rows, f, ensure_ascii=False, indent=4)
 
-        print(f"Данные успешно сохранены в {file_path}")
+    #     print(f"Данные успешно сохранены в {file_path}")
 
     def exec_query(self, query, params):
         with self.engine.connect() as connection:
@@ -113,16 +113,17 @@ class MarkupExporter:
         self.project_id, self.dataset_id = params['markups'].strip("/").split("/")[-3:-1]
         self.output_dir = f'json/{self.project_id}/{self.dataset_id}/markups_in'
         # get datasets_ids link 
+        datasets = self.get_binded_datasets()
+        # files_ids
+        
         os.makedirs(self.output_dir, exist_ok=True)  # Создаем каталог, если его нет
         file_path = os.path.join(self.output_dir, output_file)
         with open(file_path, "w", encoding="utf-8") as f:
-            datasets = self.get_binded_datasets()
             if (self.get_dataset_prent_id(datasets) is not None ):
                 json.dump({'datasets':datasets}, f, ensure_ascii=False, indent=4)
                 self.message = 'Success'
             else:
                 self.message = 'Error: dataset_parent_id is not found '
-        # files_ids
 
         # self.export_markups()
         return self.message
