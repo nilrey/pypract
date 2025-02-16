@@ -13,13 +13,11 @@ from decimal import Decimal
 from sqlalchemy import create_engine, text
 
 class MarkupExporter:
-    def __init__(self, markups_path):
-        project_id, dateset_id = markups_path.strip("/").split("/")[-3:-1]
-
+    def __init__(self):
+        self.project_id = self.dataset_id = self.dataset_parent_id = self.output_dir = None
         self.engine = create_engine(self.get_db_url())
-        # self.output_dir = f'/projects_data/{project_id}/{dateset_id}/markups_in'
-        self.output_dir = f'json/{project_id}/{dateset_id}/markups_in'
-        os.makedirs(self.output_dir, exist_ok=True)  # Создаем каталог, если его нет
+        # self.output_dir = f'/projects_data/{project_id}/{dataset_id}/markups_in'
+        
 
     def get_db_url(self):
         username = 'postgres'  # имя пользователя
@@ -48,12 +46,43 @@ class MarkupExporter:
         elif isinstance(obj, dict):  
             return {k: MarkupExporter.convert_to_serializable(v) for k, v in obj.items()}
         return obj  # Остальное оставляем без изменений
+    
+    def stmt_chains_markups(self):
+        stmt = text("""
+            select c.id as cid, c.name, c.dataset_id, c.file_id, c.is_deleted, c.is_verified, m.id as mid, m.parent_id, m.mark_time from chains c
+            join markups_chains mc on c.id = mc.chain_id
+            join markups m on mc.markup_id = m.id 
+            where c.dataset_id = :dataset_id
+            AND c.file_id = :file_id
+            AND m.is_deleted = false
+            AND NOT EXISTS (
+                SELECT 1 FROM markups m2 WHERE m2.previous_id = m.id
+            )
+        """)
+        return stmt
+    
+    def stmt_binded_datasets(self):
+        stmt = text("""
+            WITH RECURSIVE dataset_hierarchy AS (
+                SELECT id, parent_id, name, type_id, project_id, source, nn_original_id, nn_online_id,
+                    nn_teached_id, description, author_id, dt_created, dt_calculated, is_calculated, is_deleted
+                FROM public.datasets
+                WHERE id = :dataset_id
+                UNION ALL
+                SELECT d.id, d.parent_id, d.name, d.type_id, d.project_id, d.source,d.nn_original_id,d.nn_online_id,
+                    d.nn_teached_id,d.description,d.author_id,d.dt_created,d.dt_calculated,d.is_calculated,d.is_deleted
+                FROM public.datasets d
+                JOIN dataset_hierarchy dh ON d.id = dh.parent_id
+            )
+            SELECT * FROM dataset_hierarchy;
+        """)
+        return stmt
 
     def export_markups(self, limit=10, output_file="markups.json"):
-        query = text(f"SELECT * FROM markups LIMIT {limit}")
+        query = self.stmt_chains_markups()
         
         with self.engine.connect() as connection:
-            result = connection.execute(query)
+            result = connection.execute(query, {"dataset_id": self.dataset_id, "file_id": self.file_id }) 
             rows = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
 
         file_path = os.path.join(self.output_dir, output_file)
@@ -62,7 +91,33 @@ class MarkupExporter:
 
         print(f"Данные успешно сохранены в {file_path}")
 
+    def get_binded_datasets(self, dataset_id):
+        query = self.stmt_binded_datasets()
+        with self.engine.connect() as connection:
+            result = connection.execute(query, {"dataset_id": dataset_id }) 
+            rows = [self.convert_to_serializable(dict(row)) for row in result.mappings().all()]
+        # for row in rows:
+        #     if row['parent_id'] == None:
+        #         self.dataset_parent_id = row['id']
+        return rows
+
+    def run(self, image_id, params , output_file="markups.json"):
+        self.project_id, self.dataset_id = params['markups'].strip("/").split("/")[-3:-1]
+        self.output_dir = f'json/{self.project_id}/{self.dataset_id}/markups_in'
+        # get datasets_ids link 
+        os.makedirs(self.output_dir, exist_ok=True)  # Создаем каталог, если его нет
+        file_path = os.path.join(self.output_dir, output_file)
+        with open(file_path, "w", encoding="utf-8") as f:
+            rows = self.get_binded_datasets(self.dataset_id)
+            json.dump(rows, f, ensure_ascii=False, indent=4)
+        # files_ids
+
+        # self.export_markups()
+        return ''
+
+
 if __name__ == "__main__":
-    markups =  "/projects_data/fc3108a6-7b57-11ef-b77b-0242ac140002/03dfeb68-7cb5-11ef-84e7-0242ac140002/markups_out"
-    exporter = MarkupExporter(markups)  # Создаем объект экспортера
-    exporter.export_markups(limit=10)  # Экспортируем данные
+    image_id = 1
+    post_params = {'markups': "/projects_data/fc3108a6-7b57-11ef-b77b-0242ac140002/03dfeb68-7cb5-11ef-84e7-0242ac140002/markups_out"}
+    exporter = MarkupExporter()  # Создаем объект экспортера
+    exporter.run(image_id, post_params)  # Экспортируем данные
