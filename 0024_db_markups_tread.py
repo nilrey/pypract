@@ -10,6 +10,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import create_engine, text
 from configparser import ConfigParser
+from collections import defaultdict
 
 class DatasetMarkupsExport:
     def __init__(self, project_id, dataset_id): 
@@ -94,12 +95,28 @@ class DatasetMarkupsExport:
     
     def prepare_file(self, file_data):
         file = self.convert_to_serializable(dict(file_data)) 
-        chains = [{"id":1}, {"id":2}]
+        chains = self.prepare_chains(self.dataset_id , file['id']) # [{"id":1}, {"id":2}]
         return {'file_name' : file['name'],
                 'file_id' : file['id'],
                 'file_subset': 'teach',
                 'file_chains' : self.convert_to_serializable(chains),
                 }
+    
+    def prepare_chains(self, dataset_id, file_id):
+        chains_markups = self.get_chains_markups(dataset_id, file_id)
+        
+        grouped_data = defaultdict(list)
+        cname_map = {}
+        # Заполняем словарь
+        for data in chains_markups:
+            cid, chain_name, chain_vector, markup_id, markup_frame, markup_time, markup_vector, markup_path = data.values()
+            cname_map[cid] = chain_name  # Запоминаем имя, чтобы не записывать в каждой итерации
+            grouped_data[cid].append({"markup_frame": markup_frame,"markup_time": markup_time,"markup_vector": markup_vector, "markup_path": markup_path })
+
+        # Преобразуем в нужный формат
+        chains_formatted = [{"chain_name": cname_map[cid], "chain_vector": chain_vector, "chain_markups": markups} for cid, markups in grouped_data.items()]
+
+        return chains_formatted
     
     def get_json_data(self, file_data):
         datasets = self.get_binded_datasets()
@@ -116,7 +133,7 @@ class DatasetMarkupsExport:
             os.makedirs(self.output_dir, exist_ok=True)  # Создаем каталог, если его нет
             file_path = os.path.join(self.output_dir, f"{file_data['name']}.json")
             with open(file_path, "w", encoding="utf-8") as f:
-                # if (self.get_dataset_prent_id(datasets) is not None ):
+                # if (self.get_dataset_parent_id(datasets) is not None ):
                 json.dump(json_data, f, ensure_ascii=False, indent=4)
                 self.message = 'Success'
                 # else:
@@ -189,13 +206,6 @@ class DatasetMarkupsExport:
         
         return message
 
-    def get_linked_datasets(self, dataset_id):
-        # получим корневой dataset id
-        stmt = text("WITH RECURSIVE dataset_hierarchy AS ( SELECT id, parent_id, name, type_id, project_id, source, nn_original_id, nn_online_id, nn_teached_id, description, author_id, dt_created, dt_calculated, is_calculated, is_deleted  FROM public.datasets WHERE id = :dataset_id UNION ALL SELECT d.id, d.parent_id, d.name, d.type_id, d.project_id, d.source,d.nn_original_id,d.nn_online_id,  d.nn_teached_id,d.description,d.author_id,d.dt_created,d.dt_calculated,d.is_calculated,d.is_deleted FROM public.datasets d JOIN dataset_hierarchy dh ON d.id = dh.parent_id ) SELECT * FROM dataset_hierarchy")
-        resp = dbq.select_wrapper(stmt, {"dataset_id" : dataset_id } )  
-        return resp
-    
-
     def get_dataset_files(self, dataset_id):
         # получим корневой dataset id
         stmt = text("SELECT d2.id FROM datasets d1 , datasets d2 where d1.project_id = d2.project_id and d2.parent_id is null and d1.id = :dataset_id")
@@ -239,15 +249,35 @@ class DatasetMarkupsExport:
         ]
         return renamed_datasets
     
-    def get_dataset_prent_id(self, rows):
+    def get_dataset_parent_id(self, rows):
         for row in rows:
             if row['parent_id'] == None:
                 self.dataset_parent_id = row['id']
         return self.dataset_parent_id
     
+    def stmt_binded_chains_markups(self):
+        return text("""
+            select c.id as cid, c.name as chain_name, c.vector as chain_vector, m.id as mid, m.mark_frame as markup_frame, m.mark_time as markup_time, m.vector as markup_vector, m.mark_path as markup_path from chains c
+            join markups_chains mc on c.id = mc.chain_id
+            join markups m on mc.markup_id = m.id 
+            where c.dataset_id = :dataset_id
+            AND c.file_id = :file_id
+            AND m.is_deleted = false
+            AND NOT EXISTS (
+                SELECT 1 FROM markups m2 WHERE m2.previous_id = m.id
+            )
+            order by cid
+        """)
+    
+    def get_chains_markups(self, dataset_id, file_id):
+        # print(dataset_id)
+        chains_markups = self.exec_query( self.stmt_binded_chains_markups(), {"dataset_id": dataset_id, "file_id": file_id })
+        return chains_markups
 
 if __name__ == "__main__":
-    project_id='fc3108a6-7b57-11ef-b77b-0242ac140002'
-    dataset_id='03dfeb68-7cb5-11ef-84e7-0242ac140002'
+    # project_id='fc3108a6-7b57-11ef-b77b-0242ac140002'
+    # dataset_id='03dfeb68-7cb5-11ef-84e7-0242ac140002'
+    project_id='32c92072-857d-11ef-8c09-0242ac140002'
+    dataset_id='b1e57392-87c1-11ef-8658-0242ac140002'
     manager = DatasetMarkupsExport(project_id, dataset_id)
     manager.run()
