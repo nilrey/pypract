@@ -3,7 +3,7 @@
 предварительно убедиться что установлены sqlalchemy psycopg2: pip install sqlalchemy psycopg2
 проверить версию: pip show psycopg2
 не использовать Run от VScode - не правильно интерпритирует среду запуска. Возможно можно настроить.
-запускать командой: python 0025_db_camino_connect_alchemy.py 
+запускать командой: python 0025_db_markups_tread.py 
 """
 import os
 import sys
@@ -104,8 +104,7 @@ class DatasetMarkupsExport:
     def prepare_chains(self, dataset_id, file_id):
         
         chains = self.get_chains(dataset_id, file_id)
-        # self.log_info(f'Chains: {len(chains)}' )
-        chains_formatted = {}
+        # self.log_info(f'Chains: {len(chains)}' ) 
         #chains_formatted = self.convert_to_serializable(dict(chains)) 
         # chains_markups = self.get_chains_markups(dataset_id, file_id)
         
@@ -161,6 +160,7 @@ class DatasetMarkupsExport:
         while not self.stop_event.is_set():
             all_finished = True
             for filename, state in list(self.status.items()):
+                #print(f"monitor_threads = self.status : {filename}")
                 if state not in ["Success", "Failed"]:
                     all_finished = False
                 elif state is not None:
@@ -195,7 +195,7 @@ class DatasetMarkupsExport:
         self.data_files = self.get_dataset_files(self.dataset_id)
         #self.log_info(len(self.data_files))
         # Запуск потоков создания файлов
-        self.status = {filename: "In Progress" for filename in self.data_files}
+        self.status = {filename["name"]: "In Progress" for filename in self.data_files}
         # print(f"{resp[0]['id']}", file=sys.stderr)
         for file in self.data_files:
             thread = threading.Thread(target=self.create_json_file, args=(file,))
@@ -216,14 +216,17 @@ class DatasetMarkupsExport:
         return message
 
     def get_dataset_files(self, dataset_id):
+        print('dataset_id: '+dataset_id)
         # получим корневой dataset id
         stmt = text("SELECT d2.id FROM datasets d1 , datasets d2 where d1.project_id = d2.project_id and d2.parent_id is null and d1.id = :dataset_id")
         parent_dataset_id = self.exec_query(stmt, {"dataset_id" : dataset_id } )
         #self.log_info(f'dataset_id = {dataset_id}')
         #self.log_info(f'parent_dataset_id = {parent_dataset_id[0]["id"]}')
-
-        stmt = text("SELECT * FROM files f  WHERE f.dataset_id = :dataset_id")
-        files = self.exec_query(stmt, {"dataset_id" : parent_dataset_id[0]['id']} , False)
+        if(parent_dataset_id):
+            stmt = text("SELECT * FROM files f  WHERE f.dataset_id = :dataset_id")
+            files = self.exec_query(stmt, {"dataset_id" : parent_dataset_id[0]['id']} , False)
+        else:
+            files = []
         #print(f"{resp}", file=sys.stderr)
         return files
     
@@ -315,9 +318,9 @@ class DatasetMarkupsExport:
         return chains_markups
 
 if __name__ == "__main__":
-    # project_id='fc3108a6-7b57-11ef-b77b-0242ac140002'
-    # dataset_id='03dfeb68-7cb5-11ef-84e7-0242ac140002'
-    project_id='32c92072-857d-11ef-8c09-0242ac140002'
-    dataset_id='b1e57392-87c1-11ef-8658-0242ac140002'
+    project_id='fc3108a6-7b57-11ef-b77b-0242ac140002'
+    dataset_id='03dfeb68-7cb5-11ef-84e7-0242ac140012'
+    # project_id='32c92072-857d-11ef-8c09-0242ac140002'
+    # dataset_id='b1e57392-87c1-11ef-8658-0242ac140002'
     manager = DatasetMarkupsExport(project_id, dataset_id)
     manager.run()
