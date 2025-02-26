@@ -77,48 +77,65 @@ def process_json_file(file_name):
             chain_vector = json.dumps(chain["chain_vector"])
 
             # Вставляем в таблицу chains
-            # print("Executing SQL:", cursor.mogrify ( insert_chain_query, (chain_id, chain_name, json.dumps(chain_vector)) ).decode("utf-8") )
             try:
-                cursor.execute("SAVEPOINT sp1;")
+                cursor.execute("SAVEPOINT spChain;")
                 cursor.execute(insert_chain_query, (chain_id, chain_name, chain_vector))
                 success += 1  # Счетчик успешных вставок
+
+                for markup in chain.get("chain_markups", []):
+                    cnt_markups += 1
+                    markup_id = markup["markup_id"]
+                    markup_frame = markup["markup_frame"]
+                    markup_time = markup["markup_time"]
+                    markup_vector = json.dumps(markup["markup_vector"])
+                    markup_path = json.dumps(markup["markup_path"])
+
+                    # Вставляем в таблицу markups
+                    # print("Executing SQL:", cursor.mogrify(insert_markup_query, (markup_id, markup_frame, markup_time, json.dumps(markup_vector), markup_path)).decode("utf-8"))
+                    try:
+                        cursor.execute("SAVEPOINT spMarkup;")
+                        cursor.execute(insert_markup_query, (markup_id, markup_frame, markup_time, markup_vector, markup_path))
+                    except psycopg2.IntegrityError as e:
+                        cursor.execute("ROLLBACK TO SAVEPOINT spMarkup;")   # Очищаем ошибочное состояние транзакции
+                        errors += 1
+                        print(f"Ошибка целостности данных для markup_id={markup_id}: {e}")
+                        # print("Запрос вызвавший ошибку:", cursor.mogrify ( insert_chain_query, (chain_id, chain_name, json.dumps(chain_vector)) ).decode("utf-8") )
+                    except psycopg2.DatabaseError as e:
+                        cursor.execute("ROLLBACK TO SAVEPOINT spMarkup;") 
+                        errors += 1
+                        print(f"Ошибка базы данных для markup_id={markup_id}: {e}")
+                        # print("Запрос вызвавший ошибку:", cursor.mogrify ( insert_chain_query, (chain_id, chain_name, json.dumps(chain_vector)) ).decode("utf-8") )
+                    finally:
+                        cursor.execute("RELEASE SAVEPOINT spMarkup;") 
+
+                    # Вставляем связь chain_id ↔ markup_id в markups_chains
+                    cursor.execute(insert_chain_markup_query, (chain_id, markup_id))
+
             except psycopg2.IntegrityError as e:
-                cursor.execute("ROLLBACK TO SAVEPOINT sp1;")   # Очищаем ошибочное состояние транзакции
+                cursor.execute("ROLLBACK TO SAVEPOINT spChain;")   # Очищаем ошибочное состояние транзакции
                 errors += 1
-                print(f"Ошибка целостности данных для markup_id={chain_id}: {e}")
+                # print(f"Ошибка целостности данных для chain_id={chain_id}: {e}")
+                # print("Запрос вызвавший ошибку:", cursor.mogrify ( insert_chain_query, (chain_id, chain_name, json.dumps(chain_vector)) ).decode("utf-8") )
             except psycopg2.DatabaseError as e:
-                cursor.execute("ROLLBACK TO SAVEPOINT sp1;") 
+                cursor.execute("ROLLBACK TO SAVEPOINT spChain;") 
                 errors += 1
-                print(f"Ошибка базы данных для markup_id={chain_id}: {e}")
+                # print(f"Ошибка базы данных для chain_id={chain_id}: {e}")
+                # print("Запрос вызвавший ошибку:", cursor.mogrify ( insert_chain_query, (chain_id, chain_name, json.dumps(chain_vector)) ).decode("utf-8") )
 
-
-            # for markup in chain.get("chain_markups", []):
-            #     cnt_markups += 1
-            #     markup_id = markup["markup_id"]
-            #     markup_frame = markup["markup_frame"]
-            #     markup_time = markup["markup_time"]
-            #     markup_vector = json.dumps(markup["markup_vector"])
-            #     markup_path = json.dumps(markup["markup_path"])
-
-            #     # Вставляем в таблицу markups
-            #     # print("Executing SQL:", cursor.mogrify(insert_markup_query, (markup_id, markup_frame, markup_time, json.dumps(markup_vector), markup_path)).decode("utf-8"))
-           
-            #     cursor.execute(insert_markup_query, (markup_id, markup_frame, markup_time, markup_vector, markup_path))
-
-            #     # Вставляем связь chain_id ↔ markup_id в markups_chains
-            #     cursor.execute(insert_chain_markup_query, (chain_id, markup_id))
+            finally:
+                cursor.execute("RELEASE SAVEPOINT spChain;") 
 
     # Фиксация транзакции
-    print(f'success:{success}, errors:{errors}')
+    print(f'\nsuccess:{success}, errors:{errors}')
     if success > 0:
         try:
             conn.commit()
-            print(f"Успешно вставлено: {success} записей")
+            print(f"Успешно добавлено: {success} записей")
         except psycopg2.DatabaseError as e:
             conn.rollback()
             print(f"Ошибка при commit(): {e}")
     else:
-        print("Все операции завершились ошибками, ничего не вставлено.")                
+        print("Все операции завершились ошибками, ничего не добавлено.")                
     # conn.commit()
     cursor.close()
     conn.close()
@@ -145,7 +162,7 @@ start_script_time = time.time()
 print(f"Начало работы скрипта: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_script_time))}\n")
 
 # Запуск обработки файлов в нескольких потоках
-with ThreadPoolExecutor(max_workers=5) as executor:  # 5 потоков (можно увеличить)
+with ThreadPoolExecutor(max_workers=2) as executor:  # 5 потоков (можно увеличить)
     executor.map(process_json_file, json_files)
 
 end_script_time = time.time()
